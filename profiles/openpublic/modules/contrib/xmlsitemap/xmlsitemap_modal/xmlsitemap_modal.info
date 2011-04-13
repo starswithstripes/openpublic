@@ -1,0 +1,16 @@
+; $Id: xmlsitemap_modal.info,v 1.2 2010/08/24 18:22:05 davereid Exp $
+name = XML sitemap modal UI
+description = "Provides an AJAX modal UI for common XML sitemap tasks."
+package = XML sitemap
+core = 7.x
+dependencies[] = xmlsitemap
+dependencies[] = ctools
+files[] = xmlsitemap_modal.module
+hidden = TRUE
+
+; Information added by drupal.org packaging script on January 1, 1970 - 00:00
+version = "7.x-2.0-beta2"
+core = "7.x"
+project = "xmlsitemap"
+datestamp = "1297291362"
+

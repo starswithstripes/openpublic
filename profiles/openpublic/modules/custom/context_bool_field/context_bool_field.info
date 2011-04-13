@@ -1,0 +1,4 @@
+core = "7.x"
+description = "Add Context Reaction that addes the current page to the end of breadcrumbs"
+name = "Context Breadcrumb Current Page"
+package = "Context"

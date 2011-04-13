@@ -1,0 +1,16 @@
+; $Id: xmlsitemap_node.info,v 1.7 2010/01/24 19:18:25 davereid Exp $
+name = XML sitemap node
+description = Adds content links to the sitemap.
+package = XML sitemap
+core = 7.x
+dependencies[] = xmlsitemap
+files[] = xmlsitemap_node.module
+files[] = xmlsitemap_node.install
+files[] = xmlsitemap_node.test
+
+; Information added by drupal.org packaging script on January 1, 1970 - 00:00
+version = "7.x-2.0-beta2"
+core = "7.x"
+project = "xmlsitemap"
+datestamp = "1297291362"
+

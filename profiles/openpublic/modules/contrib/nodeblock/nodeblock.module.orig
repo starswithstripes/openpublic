@@ -1,0 +1,242 @@
+<?php
+
+/**
+ * @file
+ * Enables use of specified node types as custom blocks.
+ */
+
+/**
+ * hook_theme
+ */
+function nodeblock_theme($existing, $type, $theme, $path) {
+  return array(
+    'node__nodeblock__default' => array(
+      'render element' => 'elements',
+      'template' => 'node-nodeblock-default',
+    ),
+  );
+}
+
+/**
+ * Utility function to tell whether a type is enabled as a node block
+ */
+function nodeblock_type_enabled($type) {
+  if (is_object($type)) {
+    $type = $type->type;
+  }
+  return variable_get('nodeblock_'. $type, 0) ? TRUE : FALSE;
+}
+
+/**
+ * Implementation of hook_form_alter().
+ */
+function nodeblock_form_alter(&$form, $form_state, $form_id) {
+  // content type settings form
+  if ($form_id == 'node_type_form') {
+    $form['workflow']['nodeblock'] = array(
+      '#type' => 'radios',
+      '#title' => t('Available as block'),
+      '#default_value' => variable_get('nodeblock_'. $form['#node_type']->type, 0),
+      '#options' => array(0 => t('Disabled'), 1 => t('Enabled')),
+      '#description' => t('Should these nodes be made available as blocks?'),
+    );
+  }
+  // node add/edit form
+  elseif (isset($form['type']) && isset($form['#node']) && $form['type']['#value'] .'_node_form' == $form_id) {
+    $node = $form['#node'];
+    // Add translation fallback field for nodeblock and translation enabled source nodes only
+    if (nodeblock_type_enabled($node->type) && module_exists('translation') && translation_supported_type($node->type) && empty($node->translation_source)) {
+      $form['nodeblock'] = array(
+        '#type' => 'fieldset',
+        '#title' => t('Block translation options'),
+        '#tree' => true,
+      );
+      $form['nodeblock']['translation_fallback'] = array(
+        '#type' => 'checkbox',
+        '#title' => t('Enable translation fallback?'),
+        '#description' => t('If checked, the source translation node will be used when a translation for the current language does not exist.  If unchecked, the block will not be displayed if a matching translation does not exist.'),
+        '#default_value' => $node->nodeblock_translation_fallback,
+      );
+    }
+  }
+}
+
+/**
+ * hook_node_delete
+ */
+function nodeblock_node_delete() {
+  if (!nodeblock_type_enabled($node)) {
+    return;
+  }
+
+  if (isset($node->nodeblock['translation_fallback'])) {
+    $tnid = $node->tnid ? $node->tnid : $node->nid;
+    variable_del('nodeblock_translation_fallback_'. $tnid);
+  }
+  _block_rehash();
+}
+/**
+ * hook_node_update
+ */
+function nodeblock_node_update($node) {
+  _nodeblock_insert_update($node);
+}
+
+/**
+ * hook_node_insert
+ */
+function nodeblock_node_insert($node) {
+  _nodeblock_insert_update($node);
+}
+
+/**
+ * consolidation of node insert/update code since behavior should be the same
+ */
+function _nodeblock_insert_update($node) {
+  if (!nodeblock_type_enabled($node)) {
+    return;
+  }
+
+  if ($node->status) {
+    drupal_set_message(t('The block you just created is now available on the <a href="!url">block configuration page</a>.', array('!url' => url('admin/structure/block'))));
+  }
+
+  // set the translation fallback variable if set.
+  if (isset($node->nodeblock['translation_fallback'])) {
+    $tnid = $node->tnid ? $node->tnid : $node->nid;
+    variable_set('nodeblock_translation_fallback_'. $tnid, $node->nodeblock['translation_fallback']);
+  }
+  _block_rehash();
+}
+
+/**
+ * hook_block_info
+ */
+function nodeblock_block_info() {
+  $blocks = array();
+  $types = node_type_get_types();
+  foreach ($types as $type) {
+    if (nodeblock_type_enabled($type)) {
+      // Fetch all nodes of this type, excluding translations.
+      $result = db_query("SELECT nid, title FROM {node} WHERE type = :type AND status = 1 AND (nid = tnid OR tnid = 0)", array(':type' => $type->type));
+      foreach ($result as $node) {
+        $blocks[$node->nid] = array('info' => $node->title .' (nodeblock)');
+      }
+    }
+  }
+  return $blocks;
+}
+
+/**
+ * hook_block_view
+ */
+function nodeblock_block_view($delta = '') {
+  $node = node_load($delta);
+  if (!node_access('view', $node)) {
+    return;
+  }
+  $nodeblock_display = variable_get('nodeblock_block_' . $delta, array('teaser' => 0, 'links' => 1));
+  $lang = "und";
+
+  // if the node type is translatable, try to load the node with the appropriate
+  // language from the translation set.
+  if (module_exists('translation') && translation_supported_type($node->type)) {
+    global $language;
+    $translations = translation_node_get_translations($node->tnid);
+    $lang = $language->language;
+    if ($translations[$language->language]) {
+      $node = node_load($translations[$language->language]->nid);
+    }
+    elseif (!$node->nodeblock_translation_fallback) {
+      // if no translation was found, and not using the fallback option
+      // return nothing, so the block doesn't display.
+      return;
+    }
+    // otherwise we just use the main node
+  }
+
+  // Set a flag so that themes have more context.
+  $node->nodeblock = TRUE;
+    
+  $block['subject'] = check_plain($node->title);
+//  $block['content'] = node_view($node, $nodeblock_display['teaser'], TRUE, $nodeblock_display['links']);
+  
+  $display_type = ($nodeblock_display['teaser']) ? "teaser" : "full";
+  $block['content'] = node_view($node, $display_type, $lang);
+  
+
+  return $block;
+}
+
+/**
+ * hook_block_configure
+ */
+function nodeblock_block_configure($delta = '') {
+  $defaults = variable_get('nodeblock_block_' . $delta, array('teaser' => 0, 'links' => 1));
+  $form['teaser'] = array(
+    '#title' => t('Show only node teaser'),
+    '#type' => 'checkbox',
+    '#default_value' => $defaults['teaser'],
+  );
+  $form['links'] = array(
+    '#type' => 'checkbox',
+    '#default_value' => $defaults['links'],
+    '#title' => t('Include node links for "add comment", "read more" etc.'),
+  );
+  return $form;
+}
+
+/**
+ * hook_block_save
+ */
+function nodeblock_block_save($delta = '', $edit = array()) {
+  variable_set('nodeblock_block_' . $delta, array('teaser' => $edit['teaser'], 'links' => $edit['links']));
+}
+
+/**
+ * Implementation of hook_link().
+ */
+function nodeblock_link($type, $node = NULL, $teaser = FALSE) {
+  $links = array();
+
+  if ($type == 'node' && nodeblock_type_enabled($node)) {
+    if (node_access('update', $node)) {
+      $links['nodeblock_edit'] = array(
+        'title' => t('Edit'),
+        'href' => 'node/'. $node->nid .'/edit',
+        'query' => drupal_get_destination(),
+      );
+    }
+    if (module_exists('translation') && _translation_tab_access($node)) {
+      $links['nodeblock_translate'] = array(
+        'title' => t('Translate'),
+        'href' => 'node/'. $node->nid .'/translate',
+        'query' => drupal_get_destination(),
+      );
+    }
+    if (user_access('administer blocks')) {
+      $links['nodeblock_configure'] = array(
+        'title' => t('Configure'),
+        'href' => 'admin/structure/block/configure/nodeblock/'. $node->nid,
+        'query' => drupal_get_destination(),
+      );
+    }
+  }
+
+  return $links;
+}
+
+/**
+ * Implementation of hook_preprocess_node().
+ *
+ * Add node-nodeblock-default to the suggested theme files for all nodeblock
+ * enabled nodes. Note that the template is "unshifted" onto the template files
+ * array. This gives the template file a lower priority than any node-nodetype
+ * templates, but a higher priority than a generic node.tpl.php.
+ */
+function nodeblock_preprocess_node(&$variables) {
+  if (isset($variables['node']->nodeblock)) {
+    array_unshift($variables['theme_hook_suggestions'], 'node__nodeblock__default');
+  }
+}
+

@@ -1,0 +1,8 @@
+core = "7.x"
+description = "Add a field formatter for node reference that will display a view of the data"
+name = "Node Reference View Formatter"
+package = "View"
+
+dependancies[] = "views"
+dependencies[] = "node_reference"
+
