@@ -1,3 +1,0 @@
-name = Nodeblock
-description = Enables use of specified node types as custom blocks.
-core = 7.x
